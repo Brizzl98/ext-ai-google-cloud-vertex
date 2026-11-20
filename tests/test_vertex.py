@@ -224,6 +224,18 @@ def test_structured_output_must_match_original_schema(monkeypatch):
         runtime.chat(request, structured=True)
 
 
+@pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity", "1e999", "-1e999"])
+def test_json_rejects_nonfinite_numbers_at_any_depth(number):
+    with pytest.raises(ValueError, match="invalid JSON number"):
+        runtime.loads_finite_json('{"nested":[{"amount":' + number + "}]}")
+
+
+def test_json_keeps_finite_nested_numbers():
+    assert runtime.loads_finite_json('{"nested":[{"amount":1.25e2}]}') == {
+        "nested": [{"amount": 125.0}]
+    }
+
+
 def test_structured_schema_rejects_remote_reference_before_call():
     with pytest.raises(RuntimeError, match="capability_mismatch"):
         runtime.build_generate_request(

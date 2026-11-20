@@ -76,15 +76,30 @@ def handle(payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
 
 def main() -> int:
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = runtime.loads_finite_json(sys.stdin.read() or "{}")
     except ValueError:
         payload = None
     if not isinstance(payload, dict):
-        response = runtime._failure_response("invalid_response", request_semantics="safe_read")
-        print(json.dumps(response))
-        return 2
-    response, exit_code = handle(payload)
-    print(json.dumps(response))
+        response, exit_code = (
+            runtime._failure_response("invalid_response", request_semantics="safe_read"),
+            2,
+        )
+    else:
+        response, exit_code = handle(payload)
+    try:
+        encoded = json.dumps(response, allow_nan=False)
+    except (ValueError, TypeError):
+        semantics = (
+            "mutation"
+            if isinstance(payload, dict) and payload.get("mode") == "action"
+            else "safe_read"
+        )
+        encoded = json.dumps(
+            runtime._failure_response("invalid_response", request_semantics=semantics),
+            allow_nan=False,
+        )
+        exit_code = 2
+    print(encoded)
     return exit_code
 
 

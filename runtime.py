@@ -3,12 +3,29 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
 _PROJECT = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,20}\Z")
 _LOCATION = re.compile(r"[a-z][a-z0-9-]{0,62}\Z")
 _GOOGLE_OAUTH_ENDPOINT = "https://oauth2.googleapis.com/token"
+
+
+def _reject_json_constant(_value: str) -> None:
+    raise ValueError("invalid JSON number")
+
+
+def _finite_json_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("invalid JSON number")
+    return number
+
+
+def loads_finite_json(value: str | bytes | bytearray) -> Any:
+    """Decode standard JSON without accepting floats outside Python's finite range."""
+    return json.loads(value, parse_constant=_reject_json_constant, parse_float=_finite_json_float)
 
 
 def connection(request: dict[str, Any]) -> tuple[str, str, Any]:
@@ -24,7 +41,7 @@ def connection(request: dict[str, Any]) -> tuple[str, str, Any]:
     if not isinstance(raw, str) or not raw.strip():
         raise RuntimeError("authentication_error")
     try:
-        info = json.loads(raw)
+        info = loads_finite_json(raw)
         if not isinstance(info, dict) or info.get("type") != "service_account":
             raise ValueError("service account required")
         if (
@@ -74,9 +91,9 @@ def canonical_message(candidate: dict[str, Any]) -> dict[str, Any]:
     message: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
     if calls:
         continuation = {"vertex_parts": replay_parts}
-        encoded = json.dumps(continuation, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        encoded = json.dumps(
+            continuation, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
         if len(encoded) > 16 * 1024:
             raise RuntimeError("capability_mismatch")
         message["tool_calls"] = calls
@@ -337,7 +354,7 @@ def request_json(
             raw.extend(chunk)
             if len(raw) > 5 * 1024 * 1024:
                 raise RuntimeError("invalid_response")
-        data = json.loads(raw)
+        data = loads_finite_json(raw)
         if not isinstance(data, dict):
             raise RuntimeError("invalid_response")
         return data
@@ -501,7 +518,7 @@ def chat(request: dict[str, Any], *, structured: bool = False) -> dict[str, Any]
         try:
             import jsonschema
 
-            output = json.loads(message["content"])
+            output = loads_finite_json(message["content"])
             jsonschema.Draft202012Validator.check_schema(payload["schema"])
             jsonschema.Draft202012Validator(
                 payload["schema"], format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER
