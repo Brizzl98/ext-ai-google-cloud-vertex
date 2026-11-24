@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from typing import Any
 
@@ -49,8 +50,15 @@ def connection(request: dict[str, Any]) -> tuple[str, str, Any]:
             or info.get("universe_domain", "googleapis.com") != "googleapis.com"
         ):
             raise ValueError("untrusted credential endpoint")
+        from google.auth import environment_vars
         from google.oauth2 import service_account
 
+        # google-auth 2.63 makes RAB opt-in. This extension runs in its own
+        # process and keeps lookup enabled by default for service accounts.
+        os.environ.setdefault(
+            environment_vars.GOOGLE_SDK_EXPERIMENTAL_PYTHON_REGIONAL_ACCESS_BOUNDARY_LOOKUP_ENABLED,
+            "true",
+        )
         credentials = service_account.Credentials.from_service_account_info(
             info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
